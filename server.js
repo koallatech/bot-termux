@@ -1,68 +1,84 @@
 const express = require('express');
 const app = express();
+const port = 3000;
+
 app.use(express.json());
 
-// Simula um banco de dados na memória RAM
-const sessoes = {}; 
+// Armazenamento de sessões na memória RAM
+const sessoes = {};
 
-app.post('/bot', (req, res) => {
+// Configuração: Tempo para resetar (ex: 30 minutos de inatividade)
+const TEMPO_EXPIRACAO = 30 * 60 * 1000; 
+
+// Função para limpar sessões inativas
+function limparInatividade(sender) {
+    if (sessoes[sender] && sessoes[sender].estado !== 'AGUARDANDO_SUPORTE') {
+        const agora = Date.now();
+        if (agora - sessoes[sender].ultimaInteracao > TEMPO_EXPIRACAO) {
+            console.log(`[SESSÃO] Resetando ${sender} por inatividade.`);
+            delete sessoes[sender];
+        }
+    }
+}
+
+app.post('/webhook', (req, res) => {
     const { message, sender } = req.body;
-    const msg = message.trim().toLowerCase();
-    
-    // Verifica se o usuário já tem um estado, senão começa no 'INICIO'
+    const msg = message ? message.trim().toLowerCase() : "";
+
+    // 1. Limpa inatividade antes de processar
+    limparInatividade(sender);
+
+    // 2. Inicializa nova sessão se não existir
     if (!sessoes[sender]) {
-        sessoes[sender] = 'INICIO';
+        sessoes[sender] = {
+            estado: 'INICIO',
+            ultimaInteracao: Date.now()
+        };
     }
 
+    // Atualiza o timestamp da última interação
+    sessoes[sender].ultimaInteracao = Date.now();
+    let estadoAtual = sessoes[sender].estado;
     let resposta = "";
-    let acao = "NOTIFICATION"; // Padrão: responder por notificação
+    let acao = "NOTIFICATION";
 
-    // Lógica do Menu
-    switch (sessoes[sender]) {
+    console.log(`[${sender}] enviou: ${msg} | Estado Atual: ${estadoAtual}`);
+
+    // 3. Lógica de Estados (Cérebro do Bot)
+    switch (estadoAtual) {
         case 'INICIO':
-            resposta = "Olá! Bem-vindo ao atendimento Koalla TV. 🐨\n\nComo posso ajudar?\n1. Consultar Vencimento\n2. Problemas Técnicos\n3. Falar com Humano";
-            sessoes[sender] = 'MENU_PRINCIPAL';
+            resposta = "🦁 *Bem-vindo à Koalla TV!*\n\nComo posso te ajudar hoje?\n\n1️⃣ Ver meu Vencimento\n2️⃣ Renovar Assinatura\n3️⃣ Falar com Atendente";
+            sessoes[sender].estado = 'MENU_PRINCIPAL';
             break;
 
         case 'MENU_PRINCIPAL':
             if (msg === '1') {
-                resposta = "Sua conta (Simulada) vence em: 15/01/2026. ✅\n\nDigite 0 para voltar.";
-                sessoes[sender] = 'VOLTAR';
-            } else if (msg === '2') {
-                resposta = "Para problemas técnicos, tente reiniciar seu roteador e o app. Resolvemos? \n\nA) Sim\nB) Não, quero falar com suporte";
-                sessoes[sender] = 'SUPORTE_TECNICO';
-            } else if (msg === '3') {
-                resposta = "Entendido! Um atendente já foi notificado e falará com você em breve. 🎧";
-                sessoes[sender] = 'INICIO'; // Reseta após encaminhar
-            } else {
-                resposta = "Opção inválida. Digite 1, 2 ou 3.";
+                resposta = "🔍 *Consulta de Vencimento*\n\nEstou verificando no sistema Pandda... (Integração Supabase em breve)";
+                // sessoes[sender].estado = 'INICIO'; // Opcional: Volta ao início após responder
+            } 
+            else if (msg === '2') {
+                resposta = "💳 *Renovação*\n\nPara renovar, acesse nosso site ou peça o PIX para o atendente.";
+            } 
+            else if (msg === '3') {
+                resposta = "🎧 *Suporte Humanizado*\n\nEntendido! Um atendente foi notificado. Por favor, aguarde nesta linha.";
+                sessoes[sender].estado = 'AGUARDANDO_SUPORTE';
+            } 
+            else {
+                resposta = "⚠️ *Opção Inválida*\n\nPor favor, escolha 1, 2 ou 3.";
             }
             break;
 
-        case 'SUPORTE_TECNICO':
-            if (msg === 'a') {
-                resposta = "Que ótimo! A Koalla TV agradece. 🐨";
-                sessoes[sender] = 'INICIO';
-            } else {
-                resposta = "Certo, aguarde um momento que o técnico vai te chamar. 🛠️";
-                sessoes[sender] = 'INICIO';
-            }
-            break;
-
-        case 'VOLTAR':
-            if (msg === '0') {
-                resposta = "Voltando... \n\n1. Consultar Vencimento\n2. Problemas Técnicos\n3. Falar com Humano";
-                sessoes[sender] = 'MENU_PRINCIPAL';
-            }
-            break;
+        case 'AGUARDANDO_SUPORTE':
+            // Não responde nada automaticamente para não atrapalhar o humano, 
+            // ou envia uma mensagem fixa se o usuário insistir.
+            console.log(`[SUPORTE] ${sender} está na fila. Ignorando resposta automática.`);
+            return res.status(200).send(); 
 
         default:
-            sessoes[sender] = 'INICIO';
-            resposta = "Opa, me perdi aqui. Vamos recomeçar? Digite 'Oi'.";
+            resposta = "Olá! Digite qualquer coisa para ver o menu.";
+            sessoes[sender].estado = 'INICIO';
     }
 
-    console.log(`[${sender}] enviou: ${msg} | Estado: ${sessoes[sender]}`);
-    
     // Retorna o JSON para o MacroDroid
     res.json({ 
         response: resposta,
@@ -70,4 +86,6 @@ app.post('/bot', (req, res) => {
     });
 });
 
-app.listen(3000, '0.0.0.0', () => console.log("🚀 Menu Local Koalla Ativo na Porta 3000"));
+app.listen(port, () => {
+    console.log(`Servidor Pandda rodando em http://localhost:${port}`);
+});

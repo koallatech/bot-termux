@@ -4,7 +4,7 @@ const port = 3000;
 
 app.use(express.json());
 
-const ADMIN_NUMBER = "5511999999999"; // COLOQUE SEU NÚMERO AQUI
+const ADMIN_NUMBER = "5563999440714"; // COLOQUE SEU NÚMERO AQUI
 
 let botConfig = {
     pausado: false,

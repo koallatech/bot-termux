@@ -13,7 +13,7 @@ app.use((err, req, res, next) => {
     next();
 });
 
-const ADMIN_NUMBER = "63999440714"; 
+const ADMIN_NUMBER = "5563999440714"; 
 
 let botConfig = {
     pausado: false,

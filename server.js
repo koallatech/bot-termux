@@ -4,7 +4,7 @@ const port = 3000;
 
 app.use(express.json());
 
-// --- PROTEÇÃO CONTRA ERRO DE JSON ---
+// --- PROTEÇÃO CONTRA ERRO DE JSON (MENSAGENS QUEBRADAS) ---
 app.use((err, req, res, next) => {
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
         return res.status(200).send(); 
@@ -12,9 +12,8 @@ app.use((err, req, res, next) => {
     next();
 });
 
-// --- CONFIGURAÇÕES DO ADMINISTRADOR ---
-// DICA: Verifique no log exatamente como o seu número aparece (com ou sem +)
-const ADMIN_NUMBER = "5563999440714"; 
+// --- CONFIGURAÇÃO MASTER ---
+const ADMIN_NUMBER = "63999440714"; // Seu número configurado
 
 let botConfig = {
     pausado: false,
@@ -27,7 +26,9 @@ let botConfig = {
 
 let sessoes = {}; 
 
-// --- FUNÇÕES AUXILIARES ---
+const TEXTO_MENU_PRINCIPAL = "\n\n1️⃣ Solicitar Acesso Cortesia\n2️⃣ Valores do Plano\n3️⃣ Pagamento\n4️⃣ Dúvidas Frequentes (FAQ)";
+
+// --- FUNÇÕES DE APOIO ---
 function spintax(texto) {
     return texto.replace(/{([^{}]+)}/g, (match, choices) => {
         const options = choices.split('|');
@@ -40,132 +41,163 @@ function estaNoHorario() {
     return horaAtual >= botConfig.inicioSuporte && horaAtual < botConfig.fimSuporte;
 }
 
-// --- WEBHOOK ---
+// --- WEBHOOK PRINCIPAL ---
 app.post('/webhook', (req, res) => {
     const { message, sender } = req.body;
     if (!message || !sender) return res.status(200).send();
 
     const msg = message.trim().toLowerCase();
-    const cleanSender = sender.replace(/\D/g, ''); // Remove + ou caracteres não numéricos
+    const cleanSender = sender.replace(/\D/g, '');
+    const cleanAdmin = ADMIN_NUMBER.replace(/\D/g, '');
 
-    // 1. COMANDOS ADMIN (ACEITOS A QUALQUER MOMENTO)
-    // Comparamos o número limpo para evitar erro de formatação
-    if (cleanSender === ADMIN_NUMBER.replace(/\D/g, '') && msg.startsWith('!')) {
+    // 1. COMANDOS ADMIN (PRIORIDADE TOTAL E GLOBAL)
+    if (cleanSender === cleanAdmin && msg.startsWith('!')) {
         let rAdmin = "";
-        if (msg === '!admin') rAdmin = "🔧 *ADMIN:* !status, !limpar, !ind on/off, !valor X, !pausa, !play";
-        else if (msg === '!status') rAdmin = `📊 *PANDDA:* \nAtend: ${botConfig.pausado ? 'OFF' : 'ON'}\nInd: ${botConfig.indicacaoAtiva ? 'ON' : 'OFF'}\nValor: R$ ${botConfig.valorPlano}`;
-        else if (msg === '!limpar') { sessoes = {}; rAdmin = "♻️ Sessões resetadas."; }
-        else if (msg === '!ind on') { botConfig.indicacaoAtiva = true; rAdmin = "✅ Indicação ativada."; }
-        else if (msg === '!ind off') { botConfig.indicacaoAtiva = false; rAdmin = "❌ Indicação desativada."; }
-        else if (msg.startsWith('!valor')) { botConfig.valorPlano = msg.split(' ')[1]; rAdmin = `💰 Valor: R$ ${botConfig.valorPlano}`; }
-        else if (msg === '!pausa') { botConfig.pausado = true; rAdmin = "🔴 Bot pausado."; }
-        else if (msg === '!play') { botConfig.pausado = false; rAdmin = "🟢 Bot ativo."; }
         
-        console.log(`🛠️ [ADMIN] Comando executado: ${msg}`);
-        return res.json({ response: rAdmin, method: "NOTIFICATION" });
+        if (msg === '!admin' || msg === '!comandos' || msg === '!ajuda') {
+            rAdmin = "🛠️ *MENU DE COMANDOS ADMIN*\n\n" +
+                     "*GESTÃO GERAL:*\n" +
+                     "• `!status`: Mostra as configurações ativas do bot.\n" +
+                     "• `!pausa`: Desativa o bot para todos os clientes.\n" +
+                     "• `!play`: Reativa o bot após uma pausa.\n" +
+                     "• `!limpar`: Reseta o histórico de conversas de todos.\n\n" +
+                     "*VENDAS E TESTES:*\n" +
+                     "• `!valor 39,90`: Altera o preço exibido no menu.\n" +
+                     "• `!ind on/off`: Liga ou desliga o sistema de códigos de 24h.\n" +
+                     "• `!pausateste`: Bloqueia novos pedidos de teste.\n" +
+                     "• `!playteste`: Libera novos pedidos de teste.\n" +
+                     "• `!hora 09 18`: Define horário de liberação (Início Fim).";
+        } 
+        else if (msg === '!status') {
+            rAdmin = `📊 *STATUS KOALLA:* \n• Atendimento: ${botConfig.pausado ? '🔴 OFF' : '🟢 ON'}\n• Testes: ${botConfig.pausarTestes ? '🔴 OFF' : '🟢 ON'}\n• Indicação: ${botConfig.indicacaoAtiva ? '🟢 ON' : '🔴 OFF'}\n• Valor: R$ ${botConfig.valorPlano}\n• Horário: ${botConfig.inicioSuporte}h às ${botConfig.fimSuporte}h`;
+        }
+        else if (msg === '!pausa') { botConfig.pausado = true; rAdmin = "🔴 Bot pausado globalmente."; }
+        else if (msg === '!play') { botConfig.pausado = false; rAdmin = "🟢 Bot reativado para todos."; }
+        else if (msg === '!pausateste') { botConfig.pausarTestes = true; rAdmin = "🚫 Liberação de testes suspensa."; }
+        else if (msg === '!playteste') { botConfig.pausarTestes = false; rAdmin = "🔓 Liberação de testes ativa."; }
+        else if (msg === '!ind on') { botConfig.indicacaoAtiva = true; rAdmin = "✅ Sistema de indicação ATIVADO."; }
+        else if (msg === '!ind off') { botConfig.indicacaoAtiva = false; rAdmin = "❌ Sistema de indicação DESATIVADO."; }
+        else if (msg === '!limpar') { sessoes = {}; rAdmin = "♻️ Memória de conversas limpa."; }
+        else if (msg.startsWith('!valor')) {
+            const novoValor = msg.split(' ')[1];
+            if (novoValor) { botConfig.valorPlano = novoValor; rAdmin = `💰 Preço atualizado para R$ ${novoValor}`; }
+        }
+        else if (msg.startsWith('!hora')) {
+            const p = msg.split(' ');
+            if (p[1] && p[2]) {
+                botConfig.inicioSuporte = parseInt(p[1]);
+                botConfig.fimSuporte = parseInt(p[2]);
+                rAdmin = `⏰ Horário de suporte: ${p[1]}h às ${p[2]}h`;
+            }
+        }
+
+        if (rAdmin) {
+            console.log(`[ADMIN] Comando: ${msg}`);
+            return res.json({ response: rAdmin, method: "NOTIFICATION" });
+        }
     }
 
+    // 2. BLOQUEIO SE O BOT ESTIVER PAUSADO
     if (botConfig.pausado) return res.status(200).send();
 
-    // 2. INICIALIZAÇÃO E LOG DE ESTADO
+    // 3. SESSÃO DO CLIENTE
     if (!sessoes[sender]) sessoes[sender] = { estado: 'INICIO', historico: [], dados: {} };
     let sessao = sessoes[sender];
-    
-    console.log(`📩 [LOG] Cliente: ${sender} | Estado Atual: ${sessao.estado} | Mensagem: "${msg}"`);
 
-    // 3. COMANDOS GLOBAIS
+    // 4. MODO SILENCIOSO (Intervenção Humana)
     if (msg === '!atender') { sessao.estado = 'SILENCIO'; return res.json({ response: "", method: "NONE" }); }
     if (sessao.estado === 'SILENCIO' || sessao.estado === 'AGUARDANDO') return res.status(200).send();
-    if (msg === '0' || msg === 'inicio') { sessao.estado = 'MENU_PRINCIPAL'; }
 
-    // 4. FLUXO DE MENUS
+    // 5. RESET/VOLTAR
+    if (msg === '0' || msg === 'inicio' || msg === 'voltar') {
+        sessao.estado = 'MENU_PRINCIPAL';
+        return res.json({ response: spintax("{🦁|🐨} *Menu Principal*" + TEXTO_MENU_PRINCIPAL), method: "NOTIFICATION" });
+    }
+
+    // 6. LOGICA DE ESTADOS
     let resposta = "";
     switch (sessao.estado) {
         case 'INICIO':
-            resposta = "{🦁|🐨} *Bem-vindo à Koalla TV!*\n\n1️⃣ Acesso Cortesia\n2️⃣ Valores\n3️⃣ Pagamento\n4️⃣ FAQ";
+            resposta = "{🦁|🐨} *Bem-vindo ao suporte Koalla TV!*" + TEXTO_MENU_PRINCIPAL;
             sessao.estado = 'MENU_PRINCIPAL';
             break;
 
         case 'MENU_PRINCIPAL':
             if (msg === '1') {
-                if (!estaNoHorario()) {
-                    resposta = `🌙 Fora do horário (${botConfig.inicioSuporte}h às ${botConfig.fimSuporte}h). Instale aqui: [LINK]`;
+                if (botConfig.pausarTestes) {
+                    resposta = "⚠️ No momento, as liberações de teste estão suspensas para manutenção. Tente mais tarde!";
+                } else if (!estaNoHorario()) {
+                    resposta = `🌙 *Fora do horário:* Acessos são liberados das ${botConfig.inicioSuporte}h às ${botConfig.fimSuporte}h.\n\nMas você já pode adiantar a instalação: [LINK]`;
                 } else {
-                    resposta = "🚀 *Acesso Cortesia*\n\n1️⃣ Já instalei os Apps\n2️⃣ Vou instalar agora\n3️⃣ Preciso de ajuda\n\n0️⃣ Voltar";
+                    resposta = "🚀 *Acesso Cortesia*\n\n1️⃣ Já instalei os Apps\n2️⃣ Vou instalar agora\n3️⃣ Preciso de ajuda / Outro dispositivo\n\n0️⃣ Voltar";
                     sessao.estado = 'OPCOES_TESTE';
                 }
             } else if (msg === '2') {
-                resposta = `💎 *Acesso Koalla:* R$ ${botConfig.valorPlano} (30 dias).\n\n0️⃣ Voltar`;
+                resposta = `💎 *Acesso Koalla:* R$ ${botConfig.valorPlano} (30 dias).\n\n` + "------------------------\n" + TEXTO_MENU_PRINCIPAL;
+                sessao.estado = 'MENU_PRINCIPAL';
             } else if (msg === '3') {
                 resposta = "💳 Pagamento via PIX ou Cartão.\n\n0️⃣ Voltar";
             } else if (msg === '4') {
                 resposta = "❓ FAQ: DualAPP e Renovação.\n\n0️⃣ Voltar";
-            } else {
-                resposta = "⚠️ *Opção Inválida.* Escolha de 1 a 4 ou 0 para o início.";
-            }
+            } else { resposta = "⚠️ Opção inválida. Digite de 1 a 4."; }
             break;
 
         case 'OPCOES_TESTE':
-            if (msg === '1' || msg.includes('instalei')) {
-                resposta = "Ótimo! Qual o seu *nome* para o cadastro?";
+            if (msg === '1') {
+                resposta = "Ótimo! Para começarmos, qual o seu *nome*?";
                 sessao.estado = 'COLETAR_NOME';
             } else if (msg === '2') {
-                resposta = "📥 Central de Apps: [LINK]. Volte quando instalar!";
+                resposta = "📥 [LINK_PAGINA_APPS]\n\nInstale e volte aqui quando estiver pronto!";
                 sessao.estado = 'MENU_PRINCIPAL';
             } else if (msg === '3') {
-                resposta = "👨‍💻 Suporte notificado! Aguarde um momento.";
+                resposta = "👨‍💻 Aguarde um instante. Um atendente humano vai te auxiliar.";
                 sessao.estado = 'AGUARDANDO';
-            } else {
-                resposta = "⚠️ Escolha 1 (Já instalei), 2 (Vou instalar) ou 3 (Ajuda).";
-            }
+            } else { resposta = "⚠️ Escolha 1, 2 ou 3."; }
             break;
 
         case 'COLETAR_NOME':
-            sessao.dados.nome = message; // Salva o nome exatamente como enviado
+            sessao.dados.nome = message;
             if (botConfig.indicacaoAtiva) {
-                resposta = `Prazer, ${message}! Possui Código de Indicação? (Envie o código ou 0 para pular)`;
+                resposta = `Prazer, ${message}! Possui um *Código de Indicação*?\n\n✅ Com código: *24 HORAS*\n❌ Sem código: *6 HORAS*\n\nDigite o código ou 0 para pular:`;
                 sessao.estado = 'COLETAR_CODIGO';
             } else {
-                resposta = `Certo, ${message}! Quer testar agora ou agendar?\n\n1️⃣ Quero agora!\n2️⃣ Prefiro agendar`;
+                sessao.dados.duracao = "6 HORAS";
+                resposta = `Certo, ${message}! Deseja iniciar seu acesso de 6h agora ou agendar?\n\n1️⃣ Quero agora\n2️⃣ Prefiro agendar`;
                 sessao.estado = 'AGENDAR_OU_AGORA';
             }
             break;
 
         case 'COLETAR_CODIGO':
             sessao.dados.duracao = (msg !== '0') ? "24 HORAS" : "6 HORAS";
-            resposta = `✅ Registrado! Duração: ${sessao.dados.duracao}.\n\n1️⃣ Quero agora!\n2️⃣ Agendar`;
+            resposta = `✅ *Registrado!* Você terá ${sessao.dados.duracao}.\n\n1️⃣ Quero agora\n2️⃣ Prefiro agendar`;
             sessao.estado = 'AGENDAR_OU_AGORA';
             break;
 
         case 'AGENDAR_OU_AGORA':
             if (msg === '1') {
-                resposta = "✅ *Solicitação enviada!* Aguarde os dados de acesso.";
-                console.log(`🎯 [CONVERSÃO] ${sessao.dados.nome} pediu teste AGORA.`);
+                resposta = "✅ *Solicitação enviada!* Aguarde os dados aqui no chat.";
                 sessao.estado = 'AGUARDANDO';
             } else if (msg === '2') {
-                resposta = "📅 Qual o melhor dia e horário para você?";
+                resposta = "📅 Escreva o *dia e horário* desejado para o seu acesso:";
                 sessao.estado = 'DEFINIR_HORARIO';
-            } else {
-                resposta = "⚠️ Digite 1 para AGORA ou 2 para AGENDAR.";
-            }
+            } else { resposta = "⚠️ Escolha 1 ou 2."; }
             break;
 
         case 'DEFINIR_HORARIO':
             sessao.dados.agendamento = message;
-            resposta = `✅ Agendado para ${message}! O suporte entrará em contato.`;
+            resposta = `✅ *Agendado!* Nossa equipe entrará em contato às ${message}.`;
             sessao.estado = 'AGUARDANDO';
             break;
 
         default:
             sessao.estado = 'INICIO';
-            resposta = "Olá! Digite 'Início' para começar.";
+            resposta = "Olá! Digite 'Início'.";
     }
 
-    // Retorno com delay humano
     const textoFinal = spintax(resposta);
     setTimeout(() => {
         res.json({ response: textoFinal, method: "NOTIFICATION" });
-    }, (textoFinal.length * 15) + 1000);
+    }, (textoFinal.length * 15) + 1200);
 });
 
-app.listen(port, () => console.log('🚀 Pandda Koalla TV - Sistema Corrigido'));
+app.listen(port);
